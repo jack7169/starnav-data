@@ -1,0 +1,44 @@
+name: Update Starlink TLEs
+
+on:
+  schedule:
+    - cron: '15 */2 * * *'  # Every 2 hours at :15
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch TLEs from CelesTrak
+        run: |
+          curl -sf -A "StarNav/1.2 (github.com/jack7169/starnav-data)" \
+            "https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle" \
+            -o /tmp/starlink.tle
+
+          python3 -c "
+          import json
+          with open('/tmp/starlink.tle') as f:
+              lines = [l.strip() for l in f if l.strip()]
+          sats = []
+          for i in range(0, len(lines)-2, 3):
+              sats.append({'name': lines[i], 'line1': lines[i+1], 'line2': lines[i+2]})
+          with open('tle/starlink.json', 'w') as f:
+              json.dump(sats, f)
+          print(f'{len(sats)} satellites')
+          "
+
+          date -u +%Y-%m-%dT%H:%M:%SZ > tle/last_updated.txt
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tle/
+          if git diff --staged --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Update Starlink TLEs $(cat tle/last_updated.txt)"
+            git push
+          fi
